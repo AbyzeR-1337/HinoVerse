@@ -69,9 +69,8 @@ async function prepare(lesson: LessonRef, stagesLessons: LessonRef[]): Promise<P
         return { type: 'choice', skill: 'reading', prompt: q.q, options: order.map((i) => q.options[i]), answer: order.indexOf(q.answer) };
       });
       const s = story.sentences[Math.floor(rng() * story.sentences.length)];
-      exercises.push({ type: 'choice', skill: 'listening', prompt: 'Прослушайте предложение из истории. Что оно значит?', audio: s.ja, hideText: true, ja: s.ja, options: shuffle([s.ru, ...sample(story.sentences.filter((x) => x !== s).map((x) => x.ru), 3, rng)], rng), answer: -1 });
-      const last = exercises[exercises.length - 1] as Extract<Exercise, { type: 'choice' }>;
-      last.answer = last.options.indexOf(s.ru);
+      const options = shuffle([s.ru, ...sample(story.sentences.filter((x) => x !== s).map((x) => x.ru), 3, rng)], rng);
+      exercises.push({ type: 'choice', skill: 'listening', prompt: 'Прослушайте предложение из истории. Что оно значит?', audio: s.ja, hideText: true, ja: s.ja, options, answer: options.indexOf(s.ru) });
       return { items: [], exercises };
     }
     case 'exam': {

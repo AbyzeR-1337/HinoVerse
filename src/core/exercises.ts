@@ -342,7 +342,3 @@ export function buildExercise(tokenized: string, translation: string, rng: Rng, 
     audio: answer.join(''),
   };
 }
-
-export function exerciseCount(list: Exercise[]): number {
-  return list.length;
-}
