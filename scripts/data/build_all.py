@@ -486,13 +486,17 @@ def main():
     # ── словарь (все статьи с русским переводом) ──
     dict_rows = []
     for e in entries:
-        if not e["rus"]:
+        # частотные слова без русского перевода (часто заимствования вроде コーヒー) берём с английским
+        if not e["rus"] and not (e["score"] > 0 or e["seq"] in jlpt_of_seq):
             continue
         k, r = e["k"][:3], e["r"][:3]
         a = accent_for(acc, (k or r)[0], r[0])
         pos = [p for p in e["pos"] if p in POS_KEEP][:4]
         misc = [m for m in e["misc"] if m in MISC_KEEP][:3]
-        dict_rows.append([e["seq"], k, r, e["rus"][:6], pos, e["score"], a, jlpt_of_seq.get(e["seq"], 0), misc])
+        glosses = e["rus"][:6] if e["rus"] else e["eng"][:4]
+        if not e["rus"]:
+            misc = misc + ["en"]
+        dict_rows.append([e["seq"], k, r, glosses, pos, e["score"], a, jlpt_of_seq.get(e["seq"], 0), misc])
     dict_rows.sort(key=lambda x: (-x[5], x[0]))
     shard = (len(dict_rows) + 3) // 4
     for i in range(4):
@@ -589,6 +593,7 @@ def main():
 
     manifest = {
         "dictEntries": len(dict_rows),
+        "dictRussian": sum(1 for r in dict_rows if "en" not in r[8]),
         "dictShards": 4,
         "sentences": len(sent_rows),
         "sentenceShards": 2,

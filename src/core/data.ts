@@ -49,6 +49,7 @@ export interface KanjiInfo {
 
 export interface DataManifest {
   dictEntries: number;
+  dictRussian?: number;
   dictShards: number;
   sentences: number;
   sentenceShards: number;

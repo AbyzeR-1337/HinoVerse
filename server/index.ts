@@ -212,10 +212,12 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, 
   };
   const compressible = /text|json|javascript|svg|manifest/.test(type);
   if (compressible && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
-    let gz = gzCache.get(file);
+    // ключ кэша учитывает время изменения файла — после новой сборки отдаётся свежая версия
+    const key = `${file}:${(await fs.stat(file)).mtimeMs}`;
+    let gz = gzCache.get(key);
     if (!gz) {
       gz = zlib.gzipSync(await fs.readFile(file), { level: 6 });
-      if (gz.length < 8 * 1024 * 1024) gzCache.set(file, gz);
+      if (gz.length < 8 * 1024 * 1024) gzCache.set(key, gz);
     }
     res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
     return res.end(gz);
