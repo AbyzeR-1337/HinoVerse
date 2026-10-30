@@ -594,6 +594,7 @@ def main():
         "sentenceShards": 2,
         "vocab": {f"n{l}": len(vocab_levels[l]) for l in (5, 4, 3, 2, 1)},
         "kanjiCore": len(kanji_core),
+        "kanjiByLevel": {f"n{l}": sum(1 for k in kanji_core if k["j"] == l) for l in (5, 4, 3, 2, 1)},
         "kanjiTotal": len(kanji_core) + len(kanji_rare),
         "strokeChars": len(strokes),
         "strokeShards": 64,

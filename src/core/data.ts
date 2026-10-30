@@ -54,6 +54,7 @@ export interface DataManifest {
   sentenceShards: number;
   vocab: Record<string, number>;
   kanjiCore: number;
+  kanjiByLevel?: Record<string, number>;
   kanjiTotal: number;
   strokeChars: number;
   strokeShards: number;
