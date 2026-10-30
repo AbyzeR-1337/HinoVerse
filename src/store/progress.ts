@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { type Card, type Grade, newCard, review } from '../core/srs';
 import type { VoiceProfile } from '../core/speech';
 import type { Transcription } from '../core/kana';
+import { DEFAULT_SERVER_URL, STATIC_BUILD } from '../core/env';
 
 export type Skill = 'kana' | 'vocab' | 'kanji' | 'grammar' | 'listening' | 'speaking' | 'reading' | 'writing' | 'pronunciation';
 
@@ -108,8 +109,9 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceName: '',
   ttsRate: 1,
   autoplay: true,
-  aiMode: 'server',
-  serverUrl: '',
+  // без своего сервера (GitHub Pages, приложения) ИИ подключается личным ключом
+  aiMode: DEFAULT_SERVER_URL ? 'server' : STATIC_BUILD ? 'direct' : 'server',
+  serverUrl: DEFAULT_SERVER_URL,
   apiKey: '',
   syncCode: '',
   autoSync: true,

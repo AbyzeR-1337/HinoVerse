@@ -1,0 +1,8 @@
+{
+  "appId": "ru.hinoverse.app",
+  "appName": "HinoVerse",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}

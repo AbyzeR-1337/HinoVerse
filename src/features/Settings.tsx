@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useProgress, snapshot, initialData, type ProgressData } from '../store/progress';
-import { VOICE_PROFILES, japaneseVoices, speak, type VoiceProfile } from '../core/speech';
+import { VOICE_PROFILES, isNative, japaneseVoices, speak, type VoiceProfile } from '../core/speech';
+import { STATIC_BUILD } from '../core/env';
 import { generateSyncCode, isValidSyncCode, syncNow, mergeProgress } from '../core/sync';
 import { aiAvailable } from '../core/ai/client';
 import { MODEL } from '../core/ai/requests';
@@ -135,7 +136,7 @@ export function SettingsPage() {
               </option>
             ))}
           </select>
-          {voices.length === 0 && <span className="small" style={{ color: 'var(--accent)' }}>Японские голоса не найдены. Установите японский голос в настройках ОС (Windows: «Речь» → добавить японский; Android: Google TTS → японский; macOS/iOS: «Kyoko»).</span>}
+          {voices.length === 0 && !isNative() && <span className="small" style={{ color: 'var(--accent)' }}>Японские голоса не найдены. Установите японский голос в настройках ОС (Windows: «Речь» → добавить японский; Android: Google TTS → японский; macOS/iOS: «Kyoko»).</span>}
         </label>
         <label className="field">
           Скорость речи: {settings.ttsRate.toFixed(2)}×
@@ -209,6 +210,13 @@ export function SettingsPage() {
         <p className="small muted" style={{ margin: 0 }}>
           Один код — на телефоне, компьютере и в браузере. Прогресс объединяется автоматически (нужен сервер HinoVerse).
         </p>
+        {STATIC_BUILD && (
+          <label className="field">
+            Адрес сервера HinoVerse
+            <input className="input" value={settings.serverUrl} placeholder="https://hinoverse.example.com" onChange={(e) => set({ serverUrl: e.target.value.trim() })} />
+            <span className="tiny faint">Эта версия приложения работает без собственного сервера. Для синхронизации укажите адрес сервера (Docker-образ из репозитория).</span>
+          </label>
+        )}
         {settings.syncCode ? (
           <>
             <div className="row">

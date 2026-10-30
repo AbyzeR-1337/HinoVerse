@@ -1,0 +1,173 @@
+# Сборка приложений: Android (APK), Windows, macOS, Linux и веб-архив.
+#   • Тег vX.Y.Z (git tag v1.0.0 && git push origin v1.0.0) — всё собирается и выкладывается в GitHub Releases.
+#   • Запуск вручную (Actions → «Приложения» → Run workflow) — файлы появляются в «Artifacts» запуска.
+# Подпись Android (необязательно): секреты ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD. Без них собирается отладочный APK — его тоже можно установить.
+name: Приложения
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Релиз
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.rel.outputs.id }}
+    steps:
+      - id: rel
+        uses: softprops/action-gh-release@v3
+        with:
+          name: HinoVerse ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Установка
+            - **Android** — `HinoVerse-android-*.apk`: скачайте на телефон и откройте (разрешите установку из этого источника).
+            - **Windows** — `.msi` или `-setup.exe`.
+            - **macOS** — `.dmg` (универсальный: Apple Silicon и Intel). Приложение не подписано: при первом запуске — правый клик → «Открыть».
+            - **Linux** — `.AppImage` (сделайте исполняемым и запустите), `.deb` или `.rpm`.
+            - **iPhone / iPad** и любой браузер — веб-версия: откройте сайт проекта в Safari → «Поделиться» → «На экран „Домой“».
+            - **Свой сервер** — `HinoVerse-web.zip` (статические файлы) или Docker-образ `ghcr.io/${{ github.repository }}`.
+
+            Без сервера ИИ подключается личным ключом Anthropic: «Настройки» → «ИИ» → «Свой ключ».
+
+  web:
+    name: Веб-архив
+    needs: release
+    if: ${{ !cancelled() && needs.release.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:static
+        env:
+          BASE: ./
+      - run: cd dist && zip -qr ../HinoVerse-web.zip .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HinoVerse-web
+          path: HinoVerse-web.zip
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: HinoVerse-web.zip
+
+  android:
+    name: Android (APK)
+    needs: release
+    if: ${{ !cancelled() && needs.release.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v4
+      - run: npm ci
+      - name: Сборка интерфейса
+        run: npm run build:native
+      - name: Проект Android
+        run: |
+          npx cap add android
+          npx --yes @capacitor/assets@3 generate --android --assetPath assets \
+            --iconBackgroundColor '#16131a' --iconBackgroundColorDark '#16131a' \
+            --splashBackgroundColor '#16131a' --splashBackgroundColorDark '#16131a'
+          npx cap sync android
+      - name: Версия
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF" == refs/tags/v* ]] || VERSION="0.0.${GITHUB_RUN_NUMBER}"
+          sed -i -E "s/versionCode [0-9]+/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"[^\"]*\"/versionName \"${VERSION}\"/" android/app/build.gradle
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+      - name: Отладочный APK
+        run: |
+          cd android && ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "../HinoVerse-android-${VERSION}-debug.apk"
+      - name: Подписанный APK
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          npx cap build android --keystorepath "$RUNNER_TEMP/release.jks" --keystorepass "$KEYSTORE_PASSWORD" \
+            --keystorealias "$KEY_ALIAS" --keystorealiaspass "$KEY_PASSWORD" --androidreleasetype APK --signing-type apksigner
+          cp "$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)" "HinoVerse-android-${VERSION}.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HinoVerse-android
+          path: HinoVerse-android-*.apk
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: HinoVerse-android-*.apk
+
+  desktop:
+    name: ПК (${{ matrix.name }})
+    needs: release
+    if: ${{ !cancelled() && needs.release.result != 'failure' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-22.04
+            args: ''
+          - name: Windows
+            os: windows-latest
+            args: ''
+          - name: macOS
+            os: macos-latest
+            args: --target universal-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Системные библиотеки (Linux)
+        if: matrix.name == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - name: Версия из тега
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          node -e "const f='src-tauri/tauri.conf.json';const c=JSON.parse(require('fs').readFileSync(f,'utf8'));c.version=process.argv[1];require('fs').writeFileSync(f,JSON.stringify(c,null,2))" "${GITHUB_REF_NAME#v}"
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.release.outputs.id }}
+          args: ${{ matrix.args }}
+          uploadWorkflowArtifacts: true

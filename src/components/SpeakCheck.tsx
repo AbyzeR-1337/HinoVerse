@@ -1,6 +1,6 @@
 // Проверка произношения: распознавание речи + анализ тона голоса + разбор ошибок по морам.
 import { useRef, useState } from 'react';
-import { asrSupported, listen, startRecording, playRecording, type Recording, type RecorderHandle } from '../core/speech';
+import { asrSupported, isNative, listen, startRecording, playRecording, type Recording, type RecorderHandle } from '../core/speech';
 import { accentPattern, analyzePitch, parseAccent, trackPitch, type PitchAnalysis } from '../core/pitch';
 import { diffMora, explainMoraError, similarity } from '../core/compare';
 import { normalizeJa, isKanaString, katakanaToHiragana } from '../core/kana';
@@ -45,7 +45,7 @@ export function SpeakCheck({ text, reading, accent, onResult, compact }: { text:
     setInterim('');
     try {
       // запись звука для анализа тона идёт параллельно с распознаванием
-      recRef.current = await startRecording(6).catch(() => null);
+      recRef.current = isNative() && asrSupported() ? null : await startRecording(6).catch(() => null);
       setState('rec');
       const handle = asrSupported() ? listen({ onInterim: setInterim }) : null;
       stopRef.current = () => handle?.stop();

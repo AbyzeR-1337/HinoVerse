@@ -1,5 +1,10 @@
 // Озвучка (синтез речи), распознавание речи и запись с микрофона.
-// Работает на всех платформах, где браузер поддерживает Web Speech API и Web Audio.
+// В браузере и PWA — Web Speech API и Web Audio; в приложении для Android/iOS (Capacitor)
+// озвучка и распознавание идут через системные движки устройства.
+import { Capacitor } from '@capacitor/core';
+
+/** Запущено ли приложение как нативное (Capacitor). */
+export const isNative = () => Capacitor.isNativePlatform();
 
 export type VoiceProfile = 'female' | 'male' | 'child' | 'elder' | 'fast' | 'slow' | 'formal' | 'casual';
 
@@ -19,18 +24,22 @@ const MALE_HINTS = ['otoya', 'ichiro', 'keita', 'hattori', 'male', '男性', 'da
 
 let voicesCache: SpeechSynthesisVoice[] = [];
 
-export function ttsSupported(): boolean {
+function webTts(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window;
 }
 
+export function ttsSupported(): boolean {
+  return isNative() || webTts();
+}
+
 export function japaneseVoices(): SpeechSynthesisVoice[] {
-  if (!ttsSupported()) return [];
+  if (!webTts()) return [];
   const all = window.speechSynthesis.getVoices();
   if (all.length) voicesCache = all.filter((v) => v.lang.replace('_', '-').toLowerCase().startsWith('ja'));
   return voicesCache;
 }
 
-if (ttsSupported()) {
+if (webTts()) {
   window.speechSynthesis.onvoiceschanged = () => japaneseVoices();
 }
 
@@ -74,6 +83,7 @@ export function speak(text: string, opts: SpeakOptions = {}): Promise<void> {
     opts.onEnd?.();
     return Promise.resolve();
   }
+  if (isNative()) return speakNative(text, opts);
   const synth = window.speechSynthesis;
   if (opts.interrupt !== false) synth.cancel();
   const profile = opts.profile ?? 'female';
@@ -98,12 +108,36 @@ export function speak(text: string, opts: SpeakOptions = {}): Promise<void> {
   });
 }
 
+async function speakNative(text: string, opts: SpeakOptions): Promise<void> {
+  const { TextToSpeech, QueueStrategy } = await import('@capacitor-community/text-to-speech');
+  const params = PROFILE_PARAMS[opts.profile ?? 'female'];
+  try {
+    await TextToSpeech.speak({
+      text,
+      lang: 'ja-JP',
+      rate: Math.min(2, Math.max(0.3, params.rate * (opts.rate ?? 1))),
+      pitch: params.pitch,
+      volume: 1,
+      category: 'playback',
+      queueStrategy: opts.interrupt === false ? QueueStrategy.Add : QueueStrategy.Flush,
+    });
+  } catch {
+    /* нет японского голоса в системе — молча пропускаем */
+  } finally {
+    opts.onEnd?.();
+  }
+}
+
 export function stopSpeaking() {
-  if (ttsSupported()) window.speechSynthesis.cancel();
+  if (isNative()) {
+    void import('@capacitor-community/text-to-speech').then(({ TextToSpeech }) => TextToSpeech.stop()).catch(() => {});
+    return;
+  }
+  if (webTts()) window.speechSynthesis.cancel();
 }
 
 export function isSpeaking(): boolean {
-  return ttsSupported() && window.speechSynthesis.speaking;
+  return !isNative() && webTts() && window.speechSynthesis.speaking;
 }
 
 // ───────────────────────── распознавание речи ─────────────────────────
@@ -138,7 +172,7 @@ function recognitionCtor(): (new () => RecognitionLike) | null {
 }
 
 export function asrSupported(): boolean {
-  return recognitionCtor() !== null;
+  return isNative() || recognitionCtor() !== null;
 }
 
 export interface RecognitionResult {
@@ -155,6 +189,7 @@ export interface RecognitionHandle {
 
 /** Слушает одну фразу на японском. onInterim получает промежуточный текст. */
 export function listen(opts: { onInterim?: (t: string) => void; onSpeechStart?: () => void; lang?: string } = {}): RecognitionHandle {
+  if (isNative()) return listenNative(opts);
   const Ctor = recognitionCtor();
   if (!Ctor) {
     return {
@@ -202,6 +237,32 @@ export function listen(opts: { onInterim?: (t: string) => void; onSpeechStart?: 
   });
   rec.start();
   return { result, stop: () => rec.stop(), abort: () => rec.abort() };
+}
+
+/** Распознавание через системный движок Android/iOS (плагин Capacitor). Промежуточных результатов нет. */
+function listenNative(opts: { onSpeechStart?: () => void; lang?: string }): RecognitionHandle {
+  let stopFn = () => {};
+  const result = (async (): Promise<RecognitionResult> => {
+    const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+    const { available } = await SpeechRecognition.available();
+    if (!available) throw new Error('На устройстве нет службы распознавания речи (установите Google или включите голосовой ввод).');
+    let perm = await SpeechRecognition.checkPermissions();
+    if (perm.speechRecognition !== 'granted') perm = await SpeechRecognition.requestPermissions();
+    if (perm.speechRecognition !== 'granted') throw new Error('Нет доступа к микрофону. Разрешите его в настройках приложения.');
+    stopFn = () => void SpeechRecognition.stop().catch(() => {});
+    opts.onSpeechStart?.();
+    let matches: string[] = [];
+    try {
+      const r = await SpeechRecognition.start({ language: opts.lang ?? 'ja-JP', maxResults: 5, partialResults: false, popup: false });
+      matches = r.matches ?? [];
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(/no match|no speech|timeout/i.test(msg) ? 'Речь не распознана. Попробуйте ещё раз.' : `Ошибка распознавания: ${msg}`);
+    }
+    if (!matches.length) throw new Error('Речь не услышана. Попробуйте ещё раз.');
+    return { transcript: matches[0], alternatives: matches, confidence: 0.6 };
+  })();
+  return { result, stop: () => stopFn(), abort: () => stopFn() };
 }
 
 // ───────────────────────── запись с микрофона (для анализа тона) ─────────────────────────

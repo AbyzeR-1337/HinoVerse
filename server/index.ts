@@ -25,6 +25,7 @@ const PORT = Number(process.env.PORT ?? 8787);
 const DIST = path.join(root, 'dist');
 const SYNC_DIR = path.resolve(root, process.env.SYNC_DIR ?? 'server/storage');
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? '';
+const CORS_ORIGINS = CORS_ORIGIN.split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean);
 const MAX_BODY = 6 * 1024 * 1024;
 
 const anthropic = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN ? new Anthropic() : null;
@@ -228,8 +229,12 @@ async function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, 
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-  if (CORS_ORIGIN) {
-    res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  // CORS_ORIGIN: «*» или список источников через запятую (сайт на GitHub Pages, приложения Capacitor/Tauri)
+  const origin = String(req.headers.origin ?? '');
+  const allowed = CORS_ORIGIN === '*' ? '*' : CORS_ORIGINS.includes(origin) ? origin : '';
+  if (allowed) {
+    res.setHeader('Access-Control-Allow-Origin', allowed);
+    res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') {

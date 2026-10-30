@@ -6,3 +6,8 @@ server/storage
 coverage
 .DS_Store
 scripts/data/.cache
+# нативные проекты генерируются при сборке (см. .github/workflows/release.yml)
+android
+ios
+src-tauri/target
+src-tauri/gen

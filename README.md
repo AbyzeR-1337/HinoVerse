@@ -53,7 +53,7 @@ npm run build
 npm start                # http://localhost:8787
 ```
 
-Или в Docker:
+Или в Docker (готовый образ собирает GitHub Actions, см. ниже):
 
 ```bash
 docker build -t hinoverse .
@@ -71,13 +71,49 @@ docker run -p 8787:8787 -e ANTHROPIC_API_KEY=sk-ant-... -v hinoverse-sync:/app/s
 
 Сервер хранит прогресс в `SYNC_DIR` (по умолчанию `server/storage`) по коду вида `HV-XXXXX-XXXXX`. Слияние: карточки — по последнему повторению, уроки — по лучшему результату, опыт — по дням. Ключ API никогда не отправляется на сервер.
 
+## Автоматизация на GitHub (Actions)
+
+В репозитории четыре workflow в `.github/workflows/` — всё собирается и публикуется на серверах GitHub, локально ничего ставить не нужно.
+
+| Workflow | Когда запускается | Что делает |
+|---|---|---|
+| **CI** (`ci.yml`) | каждый пуш и пулл-реквест | проверка типов, тесты, сборка |
+| **GitHub Pages** (`pages.yml`) | пуш в ветку по умолчанию, или вручную | публикует приложение по адресу `https://<владелец>.github.io/<репозиторий>/` |
+| **Docker** (`docker.yml`) | пуш в ветку по умолчанию, тег `v*`, или вручную | образ сервера `ghcr.io/<владелец>/<репозиторий>` (приложение + ИИ + синхронизация) |
+| **Приложения** (`release.yml`) | тег `v*`, или вручную | APK для Android, установщики для Windows (`.msi`, `.exe`), macOS (`.dmg`), Linux (`.AppImage`, `.deb`, `.rpm`) и веб-архив |
+
+### Один раз настроить
+
+1. **Включить Pages**: репозиторий → *Settings* → *Pages* → *Build and deployment* → *Source*: **GitHub Actions**. Затем *Actions* → *GitHub Pages* → *Run workflow* (или любой пуш). Сайт работает без сервера: ИИ подключается личным ключом в настройках приложения.
+2. **(Необязательно) свой сервер для ИИ и синхронизации**: разверните Docker-образ (см. ниже) и задайте переменную репозитория *Settings* → *Secrets and variables* → *Actions* → *Variables* → `HINOVERSE_SERVER_URL` = адрес сервера. Сайт и приложения будут использовать его по умолчанию. На сервере укажите `CORS_ORIGIN` — список разрешённых источников через запятую.
+3. **(Необязательно) подписанный Android-APK** для публикации в магазине: секреты `ANDROID_KEYSTORE_BASE64` (`base64 -w0 release.jks`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. Без них собирается отладочный APK — его можно установить на телефон напрямую.
+
+### Выпустить версию
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Через 15–25 минут в *Releases* появятся файлы для всех платформ, а в *Packages* — образ `ghcr.io/…:1.0.0`. Чтобы просто собрать приложения без релиза: *Actions* → *Приложения* → *Run workflow* — файлы будут в разделе *Artifacts* запуска.
+
+### Запуск сервера из образа
+
+```bash
+docker run -d -p 8787:8787 \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e CORS_ORIGIN=https://<владелец>.github.io,https://localhost,capacitor://localhost,tauri://localhost,http://tauri.localhost \
+  -v hinoverse-sync:/app/server/storage \
+  ghcr.io/<владелец>/<репозиторий>:latest
+```
+
 ## Платформы
 
 - **Web, Android, iPhone, Windows, macOS, Linux** — установка PWA: Chrome/Edge «Установить приложение», Safari «На экран „Домой“». После первого запуска уроки работают без интернета; словари кэшируются при первом открытии.
-- **Нативные сборки** (магазины приложений) из того же кода:
-  - Android/iOS — [Capacitor](https://capacitorjs.com): `npm i @capacitor/core @capacitor/cli @capacitor/android @capacitor/ios && npx cap init HinoVerse ru.hinoverse.app --web-dir dist && npx cap add android && npx cap add ios`, затем `npm run build && npx cap sync`. В настройках приложения укажите адрес сервера, а на сервере — `CORS_ORIGIN=capacitor://localhost` (iOS) или `http://localhost` (Android).
-  - Windows/macOS/Linux — [Tauri](https://tauri.app): `npm create tauri-app` с `frontendDist: ../dist`.
-- Для хостинга в подкаталоге (например, GitHub Pages): `BASE=/HinoVerse/ npm run build` (статическая часть работает без сервера; ИИ — через «свой ключ»).
+- **Android-приложение** (Capacitor, собирается в `release.yml`): озвучка и распознавание речи — системные движки Android (нужен японский голос в «Синтезе речи» и голосовой ввод Google). Анализ высоты тона в приложении не запускается одновременно с распознаванием — график тона доступен в веб-версии.
+- **Windows, macOS, Linux** (Tauri, собирается в `release.yml`): окно с тем же интерфейсом. Озвучка и распознавание зависят от встроенного веб-движка ОС; если чего-то не хватает, используйте PWA из Chrome или Edge.
+- **iPhone/iPad**: PWA из Safari. Сборка для App Store требует аккаунта Apple Developer: `npx cap add ios` на Mac и подпись в Xcode.
+- Режимы сборки: `npm run build` — с сервером, `npm run build:static` — статический сайт (ИИ по личному ключу), `npm run build:native` — для приложений. Для хостинга в подкаталоге: `BASE=/путь/ npm run build:static`.
 
 ## Устройство проекта
 
@@ -93,6 +129,9 @@ src/
                произношение, разговор, письмо, город, экзамены, преподаватель, диалекты, настройки
   store/       состояние и прогресс (zustand + localStorage)
 server/        Node-сервер: раздача приложения, ИИ-прокси, синхронизация
+src-tauri/     настольное приложение (Tauri): Windows, macOS, Linux
+assets/        исходники иконок и заставки для приложений
+.github/       workflow GitHub Actions: CI, Pages, Docker, сборка приложений
 scripts/data/  сборка открытых словарей в public/data (Python 3, только стандартная библиотека)
 tests/         модульные и интеграционные тесты (vitest)
 ```
