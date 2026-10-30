@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#16131a"/>
+  <circle cx="256" cy="236" r="132" fill="#c0392b"/>
+  <text x="256" y="300" font-family="'Noto Serif JP','Hiragino Mincho ProN','Yu Mincho',serif" font-size="190" font-weight="700" text-anchor="middle" fill="#fff8f0">日</text>
+  <text x="256" y="446" font-family="system-ui,sans-serif" font-size="58" font-weight="700" text-anchor="middle" fill="#fff8f0" letter-spacing="4">HINO</text>
+</svg>
